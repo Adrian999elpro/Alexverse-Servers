@@ -1,0 +1,56 @@
+name: Build Windows executables
+
+"on":
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build renderer
+        run: npm run build
+
+      - name: Package installer and portable executable
+        run: npm run dist:all
+
+      - name: Verify and hash Windows artifacts
+        shell: pwsh
+        run: |
+          $executables = Get-ChildItem -Path release -Filter *.exe -File
+          if ($executables.Count -lt 2) {
+            throw "Se esperaban al menos dos ejecutables (instalador y portable); encontrados: $($executables.Count)."
+          }
+          $executables | Get-FileHash -Algorithm SHA256 | ForEach-Object {
+            "$($_.Hash)  $((Split-Path $_.Path -Leaf))"
+          } | Set-Content -Path release/SHA256SUMS.txt -Encoding ascii
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: AlexVerse-Server-Manager-1.0.0-Windows
+          path: |
+            release/*.exe
+            release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
